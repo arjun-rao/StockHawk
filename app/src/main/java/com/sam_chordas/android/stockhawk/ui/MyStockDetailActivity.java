@@ -1,118 +1,188 @@
 package com.sam_chordas.android.stockhawk.ui;
 
-import android.content.Context;
 import android.content.Intent;
 import android.database.Cursor;
 import android.graphics.Color;
 import android.os.Bundle;
+import android.support.annotation.Nullable;
 import android.support.v4.app.LoaderManager;
 import android.support.v4.content.CursorLoader;
 import android.support.v4.content.Loader;
 import android.support.v7.app.AppCompatActivity;
-import android.widget.Toast;
+import android.widget.TextView;
 
-import com.db.chart.Tools;
-import com.db.chart.model.LineSet;
-import com.db.chart.view.AxisController;
-import com.db.chart.view.LineChartView;
-import com.db.chart.view.animation.Animation;
 import com.sam_chordas.android.stockhawk.R;
-import com.sam_chordas.android.stockhawk.data.QuoteColumns;
+import com.sam_chordas.android.stockhawk.data.QuoteHistoryColumns;
 import com.sam_chordas.android.stockhawk.data.QuoteProvider;
 
+import java.util.ArrayList;
+import java.util.List;
+
+import lecho.lib.hellocharts.model.Axis;
+import lecho.lib.hellocharts.model.AxisValue;
+import lecho.lib.hellocharts.model.Line;
+import lecho.lib.hellocharts.model.LineChartData;
+import lecho.lib.hellocharts.model.PointValue;
+import lecho.lib.hellocharts.view.LineChartView;
 
 
-public class MyStockDetailActivity extends AppCompatActivity implements
-        LoaderManager.LoaderCallbacks<Cursor> {
+public class MyStockDetailActivity extends AppCompatActivity implements LoaderManager.LoaderCallbacks<Cursor> {
 
-    public static final String TAG_STOCK_SYMBOL = "STOCK_SYMBOL";
-    private static final int STOCKS_LOADER = 1;
+    public static final String ARG_STOCK_SYMBOL = "stock_symbol";
+    public static final String ARG_PARENT = "parent";
+    public static final String ARGVALUE_PARENT_ACTIVITY = "activity";
+    public static final String ARGVALUE_PARENT_WIDGET = "widget";
+    private static final int CURSOR_LOADER_ID = 0;
 
-    private String currency;
-    private LineChartView lineChartView;
+    private String stockSymbol;
+    private LineChartView mLineChart;
 
-    public static Intent getStartActivityIntent(Context context, String currency) {
-        Intent intent = new Intent(context, MyStockDetailActivity.class);
-        intent.putExtra(MyStockDetailActivity.TAG_STOCK_SYMBOL, currency);
-
-        return intent;
-    }
+    private TextView tv_graph_begin;
+    private TextView tv_graph_end;
+    private TextView tv_graph_evolution;
+    private TextView tv_graph_max;
+    private TextView tv_graph_min;
 
     @Override
-    protected void onCreate(Bundle savedInstanceState) {
+    protected void onCreate(@Nullable Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_line_graph);
 
-        currency = getIntent().getStringExtra(TAG_STOCK_SYMBOL);
+        stockSymbol = getIntent().getExtras().getString(ARG_STOCK_SYMBOL);
+        mLineChart = (LineChartView) findViewById(R.id.chart);
 
-        setTitle(currency);
-        lineChartView = (LineChartView) findViewById(R.id.linechart);
+        tv_graph_begin = (TextView) findViewById(R.id.tv_graph_begin);
+        tv_graph_end = (TextView) findViewById(R.id.tv_graph_end);
+        tv_graph_evolution = (TextView) findViewById(R.id.tv_graph_evolution);
+        tv_graph_max = (TextView) findViewById(R.id.tv_graph_max);
+        tv_graph_min = (TextView) findViewById(R.id.tv_graph_min);
 
-        getSupportLoaderManager().initLoader(STOCKS_LOADER, null, this);
+
+        this.setTitle(stockSymbol);
+
+        getSupportLoaderManager().initLoader(CURSOR_LOADER_ID, null, this);
+
     }
 
     @Override
     public Loader<Cursor> onCreateLoader(int id, Bundle args) {
-        switch (id) {
-            case STOCKS_LOADER:
-                return new CursorLoader(this, QuoteProvider.Quotes.CONTENT_URI,
-                        new String[]{QuoteColumns._ID, QuoteColumns.SYMBOL, QuoteColumns.BIDPRICE,
-                                QuoteColumns.PERCENT_CHANGE, QuoteColumns.CHANGE, QuoteColumns.ISUP},
-                        QuoteColumns.SYMBOL + " = ?",
-                        new String[]{currency},
-                        null);
-        }
+        String[] projection = new String[]{
+                QuoteHistoryColumns._ID,
+                QuoteHistoryColumns.SYMBOL,
+                QuoteHistoryColumns.DATE,
+                QuoteHistoryColumns.OPENPRICE};
 
-        return null;
+        String selection = QuoteHistoryColumns.SYMBOL + " = ?";
+
+        String[] selectionArgs = new String[]{stockSymbol};
+
+        String sortOrder = QuoteHistoryColumns.DATE + " ASC";
+
+        return new CursorLoader(this,
+                QuoteProvider.QuoteHistory.CONTENT_URI,
+                projection,
+                selection,
+                selectionArgs,
+                sortOrder);
     }
 
     @Override
     public void onLoadFinished(Loader<Cursor> loader, Cursor data) {
-        if (data.getCount() != 0)
-            displayChart(data);
 
-    }
+        int x = 0;
 
-    public void displayChart(Cursor data) {
-        LineSet lineSet = new LineSet();
-        float minimumPrice = Float.MAX_VALUE;
-        float maximumPrice = Float.MIN_VALUE;
+        if (data.moveToFirst()){
 
-        for (data.moveToFirst(); !data.isAfterLast(); data.moveToNext()) {
-            String label = data.getString(data.getColumnIndexOrThrow(QuoteColumns.BIDPRICE));
-            float price = Float.parseFloat(label);
+            Float maxValue = 0f;
+            Float minValue = 0f;
 
-            lineSet.addPoint(label, price);
-            minimumPrice = Math.min(minimumPrice, price);
-            maximumPrice = Math.max(maximumPrice, price);
+            List<AxisValue> axisValuesX = new ArrayList<>();
+            List<PointValue> pointValues = new ArrayList<>();
+
+            // Add point and define min and max value
+            do {
+                String date = data.getString(data.getColumnIndex(QuoteHistoryColumns.DATE));
+                String sPrice = data.getString(data.getColumnIndex(QuoteHistoryColumns.OPENPRICE));
+                Float fPrice = Float.valueOf(sPrice);
+
+                if (maxValue == 0f || fPrice > maxValue){
+                    maxValue = fPrice;
+                }
+                if (minValue == 0f || fPrice < minValue){
+                    minValue = fPrice;
+                }
+
+                PointValue pointValue = new PointValue(x, fPrice);
+                pointValues.add(pointValue);
+
+                if (x == (data.getCount() / 3) || x == (data.getCount() / 3 * 2)) {
+                    AxisValue axisValueX = new AxisValue(x);
+                    axisValueX.setLabel(date);
+                    axisValuesX.add(axisValueX);
+                }
+
+                x++;
+            } while (data.moveToNext());
+
+            // Draw Line
+            Line line = new Line(pointValues).setColor(Color.WHITE).setCubic(false);
+            List<Line> lines = new ArrayList<>();
+            lines.add(line);
+
+            LineChartData lineChartData = new LineChartData();
+            lineChartData.setLines(lines);
+
+            // Define x-axis
+            Axis axisX = new Axis(axisValuesX);
+            axisX.setHasLines(true);
+            axisX.setMaxLabelChars(4);
+            lineChartData.setAxisXBottom(axisX);
+
+            // Define y-axis
+            Axis axisY = new Axis();
+            axisY.setAutoGenerated(true);
+            axisY.setHasLines(true);
+            axisY.setMaxLabelChars(4);
+            lineChartData.setAxisYLeft(axisY);
+
+            // Update chart with data
+            mLineChart.setInteractive(false);
+            mLineChart.setLineChartData(lineChartData);
+
+            // Define start date and end date, and evolution of price on this period
+            data.moveToFirst();
+            String startDate = data.getString(data.getColumnIndex(QuoteHistoryColumns.DATE));
+            String sStartPrice = data.getString(data.getColumnIndex(QuoteHistoryColumns.OPENPRICE));
+            Float fStartPrice = Float.valueOf(sStartPrice);
+            data.moveToLast();
+            String endDate = data.getString(data.getColumnIndex(QuoteHistoryColumns.DATE));
+            String sEndPrice = data.getString(data.getColumnIndex(QuoteHistoryColumns.OPENPRICE));
+            Float fEndPrice = Float.valueOf(sEndPrice);
+            String evolution = String.format("%.4f",(fEndPrice-fStartPrice)*100/fStartPrice) + " %";
+
+            // Update details information
+            tv_graph_begin.setText(startDate);
+            tv_graph_end.setText(endDate);
+            tv_graph_evolution.setText(evolution);
+            tv_graph_max.setText(String.valueOf(maxValue));
+            tv_graph_min.setText(String.valueOf(minValue));
         }
-
-        lineSet.setColor(Color.parseColor("#758cbb"))
-                .setFill(Color.parseColor("#2d374c"))
-                .setDotsColor(Color.parseColor("#758cbb"))
-                .setThickness(4)
-                .setDashed(new float[]{10f, 10f});
-
-
-        lineChartView.setBorderSpacing(Tools.fromDpToPx(15))
-                .setYLabels(AxisController.LabelPosition.OUTSIDE)
-                .setXLabels(AxisController.LabelPosition.NONE)
-                .setLabelsColor(Color.parseColor("#6a84c3"))
-                .setXAxis(false)
-                .setYAxis(false)
-                .setAxisBorderValues(Math.round(Math.max(0f, minimumPrice - 5f)), Math.round(maximumPrice + 5f))
-                .addData(lineSet);
-
-        Animation anim = new Animation();
-
-        if (lineSet.size() > 1)
-            lineChartView.show(anim);
-        else
-            Toast.makeText(this, "Not enough data to plot", Toast.LENGTH_SHORT).show();
     }
 
     @Override
     public void onLoaderReset(Loader<Cursor> loader) {
+
+    }
+
+    @Override
+    public void onBackPressed() {
+        super.onBackPressed();
+
+        if (getIntent().getExtras().getString(ARG_PARENT) == ARGVALUE_PARENT_WIDGET) {
+            Intent intent = new Intent(this, MyStocksActivity.class);
+            startActivity(intent);
+        } else {
+            finish();
+        }
     }
 }
-

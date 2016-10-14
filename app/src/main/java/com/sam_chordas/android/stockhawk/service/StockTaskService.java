@@ -1,6 +1,7 @@
 package com.sam_chordas.android.stockhawk.service;
 
 import android.content.ContentProviderOperation;
+import android.content.ContentResolver;
 import android.content.ContentValues;
 import android.content.Context;
 import android.content.Intent;
@@ -14,6 +15,7 @@ import com.google.android.gms.gcm.GcmNetworkManager;
 import com.google.android.gms.gcm.GcmTaskService;
 import com.google.android.gms.gcm.TaskParams;
 import com.sam_chordas.android.stockhawk.data.QuoteColumns;
+import com.sam_chordas.android.stockhawk.data.QuoteHistoryColumns;
 import com.sam_chordas.android.stockhawk.data.QuoteProvider;
 import com.sam_chordas.android.stockhawk.rest.Utils;
 import com.squareup.okhttp.OkHttpClient;
@@ -23,7 +25,11 @@ import com.squareup.okhttp.Response;
 import java.io.IOException;
 import java.io.UnsupportedEncodingException;
 import java.net.URLEncoder;
+import java.text.SimpleDateFormat;
 import java.util.ArrayList;
+import java.util.Calendar;
+import java.util.Date;
+import java.util.Locale;
 
 /**
  * Created by sam_chordas on 9/30/15.
@@ -112,12 +118,14 @@ public class StockTaskService extends GcmTaskService{
     String urlString;
     String getResponse;
     int result = GcmNetworkManager.RESULT_FAILURE;
+    int subResult = GcmNetworkManager.RESULT_FAILURE;
 
     if (urlStringBuilder != null){
       urlString = urlStringBuilder.toString();
       try{
         getResponse = fetchData(urlString);
         result = GcmNetworkManager.RESULT_SUCCESS;
+        subResult = GcmNetworkManager.RESULT_SUCCESS;
         try {
           ContentValues contentValues = new ContentValues();
           // update ISCURRENT to 0 (false) so new data is current
@@ -143,6 +151,81 @@ public class StockTaskService extends GcmTaskService{
         e.printStackTrace();
       }
     }
+    if (subResult != GcmNetworkManager.RESULT_SUCCESS){
+      result = GcmNetworkManager.RESULT_FAILURE;
+    }
+    subResult = GcmNetworkManager.RESULT_FAILURE;
+
+    Cursor symbolQueryCursor;
+    symbolQueryCursor = mContext.getContentResolver().query(QuoteProvider.Quotes.CONTENT_URI,
+            new String[] { "Distinct " + QuoteColumns.SYMBOL }, null,
+            null, null);
+
+    if (symbolQueryCursor != null){
+      DatabaseUtils.dumpCursor(symbolQueryCursor);
+      symbolQueryCursor.moveToFirst();
+
+      SimpleDateFormat dateFormat = new SimpleDateFormat("yyyy-MM-dd", Locale.getDefault());
+      Date currentDate = new Date();
+
+      Calendar calEnd = Calendar.getInstance();
+      calEnd.setTime(currentDate);
+      calEnd.add(Calendar.DATE, 0);
+
+      Calendar calStart = Calendar.getInstance();
+      calStart.setTime(currentDate);
+      calStart.add(Calendar.MONTH, -1);
+
+      String startDate = dateFormat.format(calStart.getTime());
+      String endDate = dateFormat.format(calEnd.getTime());
+
+      for (int i = 0; i < symbolQueryCursor.getCount(); i++){
+
+        String symbol = symbolQueryCursor.getString(symbolQueryCursor.getColumnIndex(QuoteColumns.SYMBOL));
+
+        StringBuilder historyUrlStringBuilder = new StringBuilder();
+        try{
+          // Base URL for the Yahoo query for historical data
+          historyUrlStringBuilder.append("https://query.yahooapis.com/v1/public/yql?q=");
+          historyUrlStringBuilder.append(URLEncoder.encode("select * from yahoo.finance.historicaldata where symbol "
+                  + "= ", "UTF-8"));
+          historyUrlStringBuilder.append(URLEncoder.encode("\""+symbol+"\"", "UTF-8"));
+          historyUrlStringBuilder.append(URLEncoder.encode(" and startDate=\"" + startDate + "\" and endDate=\"" + endDate + "\"", "UTF-8"));
+        } catch (UnsupportedEncodingException e) {
+          e.printStackTrace();
+        }
+
+        historyUrlStringBuilder.append("&format=json&diagnostics=true&env=store%3A%2F%2Fdatatables."
+                + "org%2Falltableswithkeys&callback=");
+
+        String historyUrlString;
+        String getHistoryResponse;
+
+        if (historyUrlStringBuilder != null){
+          historyUrlString = historyUrlStringBuilder.toString();
+          try{
+            getHistoryResponse = fetchData(historyUrlString);
+            try {
+              ContentResolver resolver = mContext.getContentResolver();
+              resolver.delete(QuoteProvider.QuoteHistory.CONTENT_URI,
+                      QuoteHistoryColumns.SYMBOL + " = \"" + symbol + "\"", null);
+              mContext.getContentResolver().applyBatch(QuoteProvider.AUTHORITY,
+                      Utils.quoteHistoryJsonToContentVals(getHistoryResponse));
+            }catch (RemoteException | OperationApplicationException e){
+              Log.e(LOG_TAG, "Error applying batch insert", e);
+            }
+          } catch (IOException e){
+            e.printStackTrace();
+          }
+        }
+        if (subResult != GcmNetworkManager.RESULT_SUCCESS){
+          result = GcmNetworkManager.RESULT_FAILURE;
+        }
+        subResult = GcmNetworkManager.RESULT_FAILURE;
+        symbolQueryCursor.moveToNext();
+      }
+    }
+    symbolQueryCursor.close();
 
     return result;
   }

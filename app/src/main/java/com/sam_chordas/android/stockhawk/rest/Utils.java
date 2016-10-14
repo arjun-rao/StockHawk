@@ -4,6 +4,7 @@ import android.content.ContentProviderOperation;
 import android.util.Log;
 
 import com.sam_chordas.android.stockhawk.data.QuoteColumns;
+import com.sam_chordas.android.stockhawk.data.QuoteHistoryColumns;
 import com.sam_chordas.android.stockhawk.data.QuoteProvider;
 
 import org.json.JSONArray;
@@ -43,6 +44,29 @@ public class Utils {
               jsonObject = resultsArray.getJSONObject(i);
               batchOperations.add(buildBatchOperation(jsonObject));
             }
+          }
+        }
+      }
+    } catch (JSONException e){
+      Log.e(LOG_TAG, "String to JSON failed: " + e);
+    }
+    return batchOperations;
+  }
+
+  public static ArrayList quoteHistoryJsonToContentVals(String JSON){
+    ArrayList<ContentProviderOperation> batchOperations = new ArrayList<>();
+    JSONObject jsonObject = null;
+    JSONArray resultsArray = null;
+    try{
+      jsonObject = new JSONObject(JSON);
+      if (jsonObject != null && jsonObject.length() != 0){
+        jsonObject = jsonObject.getJSONObject("query");
+        resultsArray = jsonObject.getJSONObject("results").getJSONArray("quote");
+
+        if (resultsArray != null && resultsArray.length() != 0){
+          for (int i = 0; i < resultsArray.length(); i++){
+            jsonObject = resultsArray.getJSONObject(i);
+            batchOperations.add(buildHistoBatchOperation(jsonObject));
           }
         }
       }
@@ -96,4 +120,19 @@ public class Utils {
     }
     return builder.build();
   }
+
+  public static ContentProviderOperation buildHistoBatchOperation(JSONObject jsonObject){
+    ContentProviderOperation.Builder builder = ContentProviderOperation.newInsert(
+            QuoteProvider.QuoteHistory.CONTENT_URI);
+    try {
+      builder.withValue(QuoteHistoryColumns.SYMBOL, jsonObject.getString("Symbol"));
+      builder.withValue(QuoteHistoryColumns.DATE, jsonObject.getString("Date"));
+      builder.withValue(QuoteHistoryColumns.OPENPRICE, jsonObject.getString("Open"));
+    } catch (JSONException e){
+      e.printStackTrace();
+    }
+    return builder.build();
+  }
+
+
 }

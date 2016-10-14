@@ -11,6 +11,15 @@
   <string name="input_prefill"></string>
   <string name="network_toast">Uh-oh! This app requires an internet connection</string>
   <string name="no_stocks_toast">No stock symbols saved</string>
+  <string name="fab_content_description">Add Stock</string>
+  <string name="stock_exists_message">This stock is already saved!</string>
   <string name="invalid_stock_symbol">Invalid stock symbol</string>
+  <string name="quote_history_graph_description">Quote History Graph</string>
   <string name="widget_description">Stock Prices</string>
+  <string name="graph_content_description">Chart of stock</string>
+  <string name="graph_begin">Start Date</string>
+  <string name="graph_end">End Date</string>
+  <string name="graph_evolution">Evolution</string>
+  <string name="graph_max">Max</string>
+  <string name="graph_min">Min</string>
 </resources>
